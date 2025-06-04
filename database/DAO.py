@@ -53,30 +53,41 @@ class DAO():
 
 
     @staticmethod
-    def getNodes(k):
+    def getEdges(k, s):
 
         conn = DBConnect.get_connection()
 
         result = []
 
         cursor = conn.cursor(dictionary=True)
-        query = """ SELECT
-                    distinct
-                    o1.order_id, o2.order_id
-                    FROM
-                    bike_store_full.orders
-                    o1, bike_store_full.orders
-                    o2
-                    WHERE
-                    DATEDIFF(o1.order_date, o2.order_date) < 3
-                    AND
-                    o1.order_id != o2.order_id;
+        query = """ WITH order_totals AS (
+                    SELECT order_id, SUM(quantity) AS total_quantity
+                    FROM bike_store_full.order_items
+                    GROUP BY order_id
+                )
+                SELECT DISTINCT
+                    o1.order_id AS o1,
+                    o2.order_id AS o2,
+                    ot1.total_quantity + ot2.total_quantity AS weight
+                FROM
+                    bike_store_full.orders o1
+                JOIN
+                    bike_store_full.orders o2 ON o1.store_id = o2.store_id
+                JOIN
+                    order_totals ot1 ON o1.order_id = ot1.order_id
+                JOIN
+                    order_totals ot2 ON o2.order_id = ot2.order_id
+                WHERE
+                    o1.store_id = %s
+                    AND o1.order_id != o2.order_id
+                    AND DATEDIFF(o2.order_date, o1.order_date) > 0
+                    AND DATEDIFF(o2.order_date, o1.order_date) < %s
                     """
 
-        cursor.execute(query, (k,))
+        cursor.execute(query, (s,k,))
 
         for row in cursor:
-            result.append(Order(**row))
+            result.append((row['o1'], row['o2'], {'weight': row['weight']}))
 
         cursor.close()
         conn.close()
